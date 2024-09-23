@@ -1,0 +1,149 @@
+import { ImageIcon, PaperPlaneIcon } from '@radix-ui/react-icons';
+import React, { useEffect, useRef } from 'react';
+import { useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+
+import { useAlerts, useCreateMessageElement } from '../../../hooks';
+import { RootState, updateMessageText } from '../../../reducers';
+import { useSendMessage } from '../../../services/api';
+import { useSocket } from '../../../services/socket';
+import { NUMERO_MAXIMO_CARACTERES } from '../../../utils';
+import RoundButton from '../../RoundButton';
+import * as S from './CurrentChatFooter.styles';
+
+export const CurrentChatFooter = () => {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const dispatch = useDispatch();
+  const chatList = useSelector((state: RootState) => state.ChatList);
+  const { currentChatId } = useSelector(
+    (state: RootState) => state.CurrentChat
+  );
+  const { displayAlert } = useAlerts();
+  const { createMessageElement } = useCreateMessageElement();
+  const { sendMessage } = useSendMessage();
+  const { sendWriting } = useSocket();
+
+  const [userIsWriting, setUserIsWriting] = useState<boolean>(false);
+  const [messageText, setMessageText] = useState('');
+
+  async function prepararSendMessage() {
+    if (messageText && currentChatId) {
+      let newMessageText = messageText.trim();
+
+      if (newMessageText !== '') {
+        setUserIsWriting(true);
+        sendMessage(
+          createMessageElement({
+            typemessage: 'text',
+            body: newMessageText,
+          }),
+          currentChatId
+        );
+        setMessageText('');
+        handleWriting('');
+      }
+    }
+  }
+
+  function handleInputKey(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter' && !event.shiftKey && messageText !== '') {
+      event.preventDefault();
+      prepararSendMessage();
+    }
+  }
+
+  function handleWriting(event: string) {
+    setMessageText(event);
+    if (event.length >= 10000) {
+      displayAlert(NUMERO_MAXIMO_CARACTERES, 'chat-alert-trigger');
+    }
+  }
+
+  useEffect(() => {
+    if (currentChatId && inputRef.current) {
+      setMessageText(chatList[currentChatId].messageText);
+      inputRef.current.focus();
+    }
+    return () => {
+      if (currentChatId && inputRef.current) {
+        dispatch(
+          updateMessageText({
+            receiverid: currentChatId,
+            messageText: inputRef.current.value,
+          })
+        );
+      }
+    };
+  }, [currentChatId]);
+
+  useEffect(() => {
+    const timerSendWriting = setTimeout(() => {
+      if (currentChatId) {
+        setUserIsWriting(false);
+        sendWriting(currentChatId, false);
+      }
+    }, 1000 * 2); // 10 segundos
+
+    return () => {
+
+      console.log(currentChatId + "-" + userIsWriting)
+      clearTimeout(timerSendWriting)
+      if (currentChatId && !userIsWriting) {
+        setUserIsWriting(true)
+        sendWriting(currentChatId, true);
+      }
+    }
+  }, [messageText])
+
+  useEffect(() => {
+    return () => {
+      if (currentChatId) {
+        console.log("Saiu")
+        sendWriting(currentChatId, false);
+      }
+    }
+  }, [currentChatId])
+
+
+
+  function handleClickFileInput() {
+    const fileInputButton =
+      window.document.getElementById('file-input-button');
+    if (fileInputButton) {
+      fileInputButton.click();
+    }
+  }
+
+  return (
+    <S.FooterChat>
+      <div style={{ display: 'flex' }}>
+        <RoundButton color="grass" onClick={handleClickFileInput}>
+          <>
+            <ImageIcon />
+          </>
+        </RoundButton>
+      </div>
+      <S.OnlyInput
+        placeholder="Escreva a mensagem aqui..."
+        onChange={(event) => {
+          handleWriting(event.target.value);
+        }}
+        onKeyPress={(event) => handleInputKey(event)}
+        ref={inputRef}
+        value={messageText}
+        lang="pt-br"
+        spellCheck
+        maxLength={10000}
+        autoFocus
+      />
+      <div style={{ display: 'flex' }}>
+        <RoundButton
+          color={'grass'}
+          onClick={() => prepararSendMessage()}
+        >
+          <PaperPlaneIcon />
+        </RoundButton>
+      </div>
+    </S.FooterChat>
+  );
+};
